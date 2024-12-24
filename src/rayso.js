@@ -180,48 +180,49 @@ export class RaySo {
 
     async getImage(page) {
         try {
-            // Set the download folder
+            // Definir a pasta de downloads
             const downloadPath = path.resolve(
                 path.dirname(new URL(import.meta.url).pathname),
                 'downloads'
             );
-
+    
             await page._client().send('Page.setDownloadBehavior', {
                 behavior: 'allow',
                 downloadPath,
             });
-
-            // Wait for the download button to appear and click it
+    
+            // Esperar o botão de download aparecer e clicar
             await page.waitForSelector('button[aria-label="Export as PNG"]');
             await page.click('button[aria-label="Export as PNG"]');
-
-            // Monitor the downloads folder for the file
+    
+            // Monitorar a pasta de downloads pelo arquivo
             const waitForFile = async (dir, timeout = 10000) => {
                 const start = Date.now();
                 while (Date.now() - start < timeout) {
                     const files = fs.readdirSync(dir);
-                    if (files.length > 0) {
-                        return path.join(dir, files[0]); // Return the first file
+                    const pngFile = files.find((file) => file.endsWith('.png')); // Procura apenas arquivos .png
+                    if (pngFile) {
+                        return path.join(dir, pngFile); // Retorna o caminho do arquivo .png
                     }
-                    await new Promise((r) => setTimeout(r, 500)); // Wait before checking again
+                    await new Promise((r) => setTimeout(r, 500)); // Espera antes de verificar novamente
                 }
                 throw new Error('File download timed out.');
             };
-
-            // Wait for the file and rename it
+    
+            // Esperar o arquivo ser baixado e renomear
             const downloadedFile = await waitForFile(downloadPath);
             const newFileName = path.join(downloadPath, `${this.fileName}.png`);
             fs.renameSync(downloadedFile, newFileName);
-
+    
             console.log(`File downloaded and renamed to: ${newFileName}`);
-
-            // Read file content
+    
+            // Ler o conteúdo do arquivo
             const fileContent = fs.readFileSync(newFileName);
-
-            // Delete the file
+    
+            // Deletar o arquivo específico
             fs.unlinkSync(newFileName);
             console.log(`File ${newFileName} deleted.`);
-
+    
             return fileContent;
         } catch (err) {
             console.error(err);
