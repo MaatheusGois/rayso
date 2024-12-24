@@ -12,11 +12,8 @@ const raySo = new RaySo({ background: false })
 
 raySo
     .cook(`console.log('This is an example of output without background');`)
-    .then(response => {
-        console.log(
-            '> Received an image buffer. Buffer length: %s',
-            response.length
-        )
+    .then(image => {
+        console.log(image)
     })
     .catch(err => {
         console.error(err)

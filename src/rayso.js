@@ -8,7 +8,6 @@
  */
 
 import puppeteer from 'puppeteer'
-import crypto from 'node:crypto'
 import {
     CardPadding,
     CardProgrammingLanguage,
@@ -16,6 +15,8 @@ import {
 } from './entities/options.js'
 import { isValidPath } from './helpers/isValidPath.js'
 import { InvalidParameterException } from './helpers/exceptions.js';
+import path from 'path'
+import fs from 'fs'
 
 export class RaySo {
     /**
@@ -57,16 +58,6 @@ export class RaySo {
         * @param {(
             true|
             false
-        )} [options.localPreview]
-            Creates local file (example.png) of the output. 
-            Buffer is still being returned. 
-            Default is false.
-        * @param {String} [options.localPreviewPath]
-            Full path to your destination folder you'd like to save the example.
-            Default is your executed file's location.
-        * @param {(
-            true|
-            false
         )} [options.debug]
             Will show information in the terminal
             about the image generation process.
@@ -79,9 +70,8 @@ export class RaySo {
         darkMode = true,
         padding = CardPadding.md,
         language = CardProgrammingLanguage.AUTO,
-        localPreview = false,
-        localPreviewPath = '',
         debug = false,
+        fileName = 'custom_file'
     } = {}) {
         this.title = title
         this.theme = theme
@@ -89,9 +79,8 @@ export class RaySo {
         this.darkMode = darkMode
         this.padding = padding
         this.language = language
-        this.localPreview = localPreview
-        this.localPreviewPath = localPreviewPath
         this.debug = debug
+        this.fileName = fileName
     }
 
     /**
@@ -108,9 +97,7 @@ export class RaySo {
                 background: this.background,
                 darkMode: this.darkMode,
                 padding: this.padding,
-                language: this.language,
-                localPreview: this.localPreview,
-                localPreviewPath: this.localPreviewPath,
+                language: this.language
             })
 
             if (!parametersValidation.ok)
@@ -121,8 +108,8 @@ export class RaySo {
 
             const browser = await this.openBrowser()
             const page = await this.openPage(browser, code)
-            const element = await this.getFrameElement(page)
-            const image = await this.getImage(element)
+            const image = await this.getImage(page)
+
 
             await page.close()
             await browser.close()
@@ -175,25 +162,6 @@ export class RaySo {
             const page = await browser.newPage()
 
             await page.goto(this.buildPageUrl(code))
-            await page.setViewport({
-                width: 8192,
-                height: 2048,
-            })
-            await page.waitForSelector('body > div > main > div.code_app__D8hzR > div.Controls_controls__Tz_C5', {
-                visible: true,
-            });
-            await page.evaluate(() => {
-                document.querySelector(
-                    'body > div > main > div.code_app__D8hzR > div.Frame_frameContainer__GrOiz > div > div.ResizableFrame_windowSizeDragPoint__MeF70.ResizableFrame_left__5GSAj'
-                ).style.display = 'none'
-                document.querySelector(
-                    'body > div > main > div.code_app__D8hzR > div.Frame_frameContainer__GrOiz > div > div.ResizableFrame_windowSizeDragPoint__MeF70.ResizableFrame_right__MUj0x'
-                ).style.display = 'none'
-            })
-
-            if (this.debug) {
-                console.info('[=====-----] Opened and set up the page...')
-            }
 
             return page
         } catch (err) {
@@ -201,73 +169,65 @@ export class RaySo {
         }
     }
 
-    /**
-     * This method gets part of the page where the code preview is.
-     * @private
-     */
-    async getFrameElement(page) {
-        try {
-            const element = await page.$('div[class="ResizableFrame_resizableFrame__RZ6bb"]')
-
-            if (this.debug) {
-                console.info('[======----] Selected code frame element...')
-            }
-
-            return element
-        } catch (err) {
-            console.error(err)
-        }
+    async sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**
      * This method takes a screenshot of the code preview frame and returns an image buffer.
      * @private
      */
-    async getImage(element) {
+
+    async getImage(page) {
         try {
-            if (this.localPreview) {
-                const previewFileName =
-                    'example_' + crypto.randomBytes(4).toString('hex') + '.png'
-                const image = await element.screenshot({
-                    omitBackground: true,
-                    path:
-                        (this.localPreviewPath.length > 0
-                            ? this.localPreviewPath.at(-1) === '/'
-                                ? this.localPreviewPath
-                                : this.localPreviewPath + '/'
-                            : '') + previewFileName,
-                })
+            // Set the download folder
+            const downloadPath = path.resolve(
+                path.dirname(new URL(import.meta.url).pathname),
+                'downloads'
+            );
 
-                if (this.debug) {
-                    console.info('[========--] Took a screenshot...')
-                    console.info(
-                        '[=========-] Created a local file named %s...',
-                        previewFileName
-                    )
-                    console.info(
-                        '[==========] Successfully generated an image...'
-                    )
+            await page._client().send('Page.setDownloadBehavior', {
+                behavior: 'allow',
+                downloadPath,
+            });
+
+            // Wait for the download button to appear and click it
+            await page.waitForSelector('button[aria-label="Export as PNG"]');
+            await page.click('button[aria-label="Export as PNG"]');
+
+            // Monitor the downloads folder for the file
+            const waitForFile = async (dir, timeout = 10000) => {
+                const start = Date.now();
+                while (Date.now() - start < timeout) {
+                    const files = fs.readdirSync(dir);
+                    if (files.length > 0) {
+                        return path.join(dir, files[0]); // Return the first file
+                    }
+                    await new Promise((r) => setTimeout(r, 500)); // Wait before checking again
                 }
+                throw new Error('File download timed out.');
+            };
 
-                return image
-            } else {
-                const image = await element.screenshot({
-                    omitBackground: true,
-                })
+            // Wait for the file and rename it
+            const downloadedFile = await waitForFile(downloadPath);
+            const newFileName = path.join(downloadPath, `${this.fileName}.png`);
+            fs.renameSync(downloadedFile, newFileName);
 
-                if (this.debug) {
-                    console.info('[========--] Took a screenshot...')
-                    console.info(
-                        '[==========] Successfully generated an image...'
-                    )
-                }
+            console.log(`File downloaded and renamed to: ${newFileName}`);
 
-                return image
-            }
+            // Read file content
+            const fileContent = fs.readFileSync(newFileName);
+
+            // Delete the file
+            fs.unlinkSync(newFileName);
+            console.log(`File ${newFileName} deleted.`);
+
+            return fileContent;
         } catch (err) {
-            console.error(err)
+            console.error(err);
         }
     }
+
 
     /**
      * This method builds ray.so url with its params based on params passed to the class constructor.
@@ -322,22 +282,6 @@ export class RaySo {
 
             if (typeof params.darkMode !== 'boolean')
                 errors.push('Dark mode parameter must be type of boolean.')
-
-            if (typeof params.localPreview !== 'boolean')
-                errors.push('Local preview parameter must be type of boolean.')
-
-            if (typeof params.localPreviewPath !== 'string') {
-                errors.push(
-                    'Local preview path parameter must be type of string.'
-                )
-            } else if (
-                params.localPreviewPath.length > 0 &&
-                !isValidPath(params.localPreviewPath)
-            ) {
-                errors.push(
-                    'The local preview path is incorrect. Please check it and try again.'
-                )
-            }
 
             if (typeof params.theme !== 'string') {
                 errors.push('Theme parameter must be type of string.')
