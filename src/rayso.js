@@ -219,10 +219,6 @@ export class RaySo {
             // Ler o conteúdo do arquivo
             const fileContent = fs.readFileSync(newFileName);
     
-            // Deletar o arquivo específico
-            fs.unlinkSync(newFileName);
-            console.log(`File ${newFileName} deleted.`);
-    
             return fileContent;
         } catch (err) {
             console.error(err);
