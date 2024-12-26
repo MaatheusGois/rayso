@@ -17,6 +17,7 @@ import { isValidPath } from './helpers/isValidPath.js'
 import { InvalidParameterException } from './helpers/exceptions.js';
 import path from 'path'
 import fs from 'fs'
+import { randomUUID } from 'crypto';
 
 export class RaySo {
     /**
@@ -70,8 +71,7 @@ export class RaySo {
         darkMode = true,
         padding = CardPadding.md,
         language = CardProgrammingLanguage.AUTO,
-        debug = false,
-        fileName = 'custom_file'
+        debug = false
     } = {}) {
         this.title = title
         this.theme = theme
@@ -80,7 +80,7 @@ export class RaySo {
         this.padding = padding
         this.language = language
         this.debug = debug
-        this.fileName = fileName
+        this.fileName = randomUUID()
     }
 
     /**
@@ -139,7 +139,7 @@ export class RaySo {
                     '--no-zygote',
                     '--disable-gpu',
                 ],
-                headless: true,
+                headless: false,
                 ignoreHTTPSErrors: true,
             })
 
@@ -192,7 +192,7 @@ export class RaySo {
             });
     
             // Esperar o botão de download aparecer e clicar
-            await page.waitForSelector('button[aria-label="Export as PNG"]');
+            await this.sleep(5000);
             await page.click('button[aria-label="Export as PNG"]');
     
             // Monitorar a pasta de downloads pelo arquivo
@@ -204,7 +204,7 @@ export class RaySo {
                     if (pngFile) {
                         return path.join(dir, pngFile); // Retorna o caminho do arquivo .png
                     }
-                    await new Promise((r) => setTimeout(r, 500)); // Espera antes de verificar novamente
+                    await new Promise((r) => setTimeout(r, 1000)); // Espera antes de verificar novamente
                 }
                 throw new Error('File download timed out.');
             };
@@ -218,6 +218,8 @@ export class RaySo {
     
             // Ler o conteúdo do arquivo
             const fileContent = fs.readFileSync(newFileName);
+            
+            await this.removeFolder(downloadPath);
     
             return fileContent;
         } catch (err) {
@@ -225,6 +227,14 @@ export class RaySo {
         }
     }
 
+    async removeFolder(directory) {
+        const files = await fs.promises.readdir(directory);
+        for (const file of files) {
+            if (path.extname(file) === '.png') {
+                await fs.promises.unlink(path.join(directory, file));
+            }
+        }
+    }
 
     /**
      * This method builds ray.so url with its params based on params passed to the class constructor.
